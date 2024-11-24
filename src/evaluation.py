@@ -112,36 +112,47 @@ class ProcessModelEvaluator:
             self.process_graph.add_edge(source, target, weight=count)
 
     def calculate_model_stats(self) -> None:
-        """Calculate comprehensive model statistics."""
-        self.model_stats.update({
-            'total_traces': len(self.traces),
-            'unique_traces': len(set(tuple(trace) for trace in self.traces)),
-            'total_events': len(self.event_log),
-            'unique_events': len(self.unique_events),
-            'avg_trace_length': sum(len(trace) for trace in self.traces) / len(self.traces),
-            'min_trace_length': min(len(trace) for trace in self.traces),
-            'max_trace_length': max(len(trace) for trace in self.traces)
-        })
-        
-        # Calculate start and end activities
-        start_activities = set(trace[0] for trace in self.traces)
-        end_activities = set(trace[-1] for trace in self.traces)
-        self.model_stats.update({
-            'start_activities': len(start_activities),
-            'end_activities': len(end_activities),
-            'unique_start_activities': list(start_activities),
-            'unique_end_activities': list(end_activities)
-        })
-        
-        # Calculate graph metrics
-        self.model_stats.update({
-            'transitions': self.process_graph.number_of_edges(),
-            'avg_out_degree': sum(dict(self.process_graph.out_degree()).values()) / len(self.process_graph),
-            'max_out_degree': max(dict(self.process_graph.out_degree()).values()),
-            'parallel_activities': self._count_parallel_activities(),
-            'cycles': len(list(nx.simple_cycles(self.process_graph)))
-        })
-
+            """Calculate comprehensive model statistics."""
+            # Calculate trace-based statistics
+            self.model_stats.update({
+                'total_traces': len(self.traces),
+                'unique_traces': len(set(tuple(trace) for trace in self.traces)),
+                'total_events': len(self.event_log),
+                'unique_events': len(self.unique_events),
+                'avg_trace_length': sum(len(trace) for trace in self.traces) / len(self.traces),
+                'min_trace_length': min(len(trace) for trace in self.traces),
+                'max_trace_length': max(len(trace) for trace in self.traces)
+            })
+            
+            # Calculate start and end activities more accurately
+            start_activities = set(trace[0] for trace in self.traces)
+            
+            # Identify true end activities by looking at the last event of each trace
+            end_activities = set(trace[-1] for trace in self.traces)
+            
+            # Filter out noise events and standardize activity names
+            standardized_end_activities = {
+                self.standardize_activity_name(activity)
+                for activity in end_activities
+                if not self.is_noise_event(activity)
+            }
+            
+            self.model_stats.update({
+                'start_activities': len(start_activities),
+                'end_activities': len(standardized_end_activities),
+                'unique_start_activities': sorted(list(start_activities)),
+                'unique_end_activities': sorted(list(standardized_end_activities))
+            })
+            
+            # Calculate graph metrics
+            self.model_stats.update({
+                'transitions': self.process_graph.number_of_edges(),
+                'avg_out_degree': sum(dict(self.process_graph.out_degree()).values()) / len(self.process_graph),
+                'max_out_degree': max(dict(self.process_graph.out_degree()).values()),
+                'parallel_activities': self._count_parallel_activities(),
+                'cycles': len(list(nx.simple_cycles(self.process_graph)))
+            })
+    
     def _count_parallel_activities(self) -> int:
         """Count potential parallel activities based on concurrent relationships."""
         parallel_count = 0
@@ -303,8 +314,31 @@ class ProcessModelEvaluator:
                        
         return len(observed_patterns) / max_patterns if max_patterns > 0 else 0.0
 
+    def standardize_activity_name(self, activity: str) -> str:
+        """Standardize activity names to handle variations."""
+        # Map variations of same activities to standard names
+        activity_mapping = {
+            'TransferToICU': 'Transfer',
+            'TransferToSpecializedCare': 'Transfer',
+            'TreatmentFinalization': 'TreatmentFinalize',
+            'TreatmentFinalize': 'TreatmentFinalize',
+            'WaitforDoctor': 'WaitDoctor',
+            'WaitForDoctor': 'WaitDoctor',
+            'WaitDoctor': 'WaitDoctor'
+        }
+        return activity_mapping.get(activity, activity)
+
+    def is_noise_event(self, activity: str) -> bool:
+        """Check if an activity is a noise event."""
+        noise_indicators = [
+            'NoiseEvent',
+            'NurseNotes',
+            '--------'
+        ]
+        return any(indicator in activity for indicator in noise_indicators)
+
     def generate_evaluation_report(self) -> str:
-        """Generate a comprehensive evaluation report."""
+        """Generate comprehensive evaluation report with corrected statistics."""
         report = []
         report.append("\nProcess Model Evaluation Report")
         report.append("=" * 50)
@@ -312,19 +346,51 @@ class ProcessModelEvaluator:
         # Model Statistics
         report.append("\n1. Model Statistics")
         report.append("-" * 20)
-        for key, value in self.model_stats.items():
-            if isinstance(value, (int, float)):
-                report.append(f"{key.replace('_', ' ').title()}: {value:.2f}" 
-                            if isinstance(value, float) else f"{key.replace('_', ' ').title()}: {value}")
+        stats_to_show = [
+            ('Total Traces', 'total_traces'),
+            ('Unique Traces', 'unique_traces'),
+            ('Total Events', 'total_events'),
+            ('Unique Events', 'unique_events'),
+            ('Avg Trace Length', 'avg_trace_length'),
+            ('Min Trace Length', 'min_trace_length'),
+            ('Max Trace Length', 'max_trace_length'),
+            ('Start Activities', 'start_activities'),
+            ('End Activities', 'end_activities'),
+            ('Transitions', 'transitions'),
+            ('Avg Out Degree', 'avg_out_degree'),
+            ('Max Out Degree', 'max_out_degree'),
+            ('Parallel Activities', 'parallel_activities'),
+            ('Cycles', 'cycles')
+        ]
+        
+        for label, key in stats_to_show:
+            value = self.model_stats[key]
+            if isinstance(value, float):
+                report.append(f"{label}: {value:.2f}")
+            else:
+                report.append(f"{label}: {value}")
         
         # Conformance Metrics
         report.append("\n2. Conformance Metrics")
         report.append("-" * 20)
-        for metric, value in self.metrics.items():
-            report.append(f"{metric.title()}: {value:.3f}")
+        report.append(f"Fitness: {self.metrics['fitness']:.3f}")
+        report.append(f"Precision: {self.metrics['precision']:.3f}")
+        report.append(f"Generalization: {self.metrics['generalization']:.3f}")
         
-        # Analysis of Issues
-        report.append("\n3. Detailed Analysis")
+        # Activity Details
+        report.append("\n3. Activity Details")
+        report.append("-" * 20)
+        
+        report.append("\nStart Activities:")
+        for activity in sorted(self.model_stats['unique_start_activities']):
+            report.append(f"- {activity}")
+            
+        report.append("\nEnd Activities:")
+        for activity in sorted(self.model_stats['unique_end_activities']):
+            report.append(f"- {activity}")
+        
+        # Process Analysis
+        report.append("\n4. Process Analysis")
         report.append("-" * 20)
         
         # Fitness Issues
@@ -342,13 +408,23 @@ class ProcessModelEvaluator:
             for issue in self.issues['precision'][:5]:
                 report.append(f"- {issue['transition']}")
         
-        # Generate Recommendations
-        report.append("\n4. Recommendations")
+        # Process Patterns
+        report.append("\n5. Process Patterns")
         report.append("-" * 20)
-        report.extend(self._generate_recommendations())
+        report.append(f"Cycles Detected: {self.model_stats['cycles']}")
+        report.append(f"Parallel Activities: {self.model_stats['parallel_activities']}")
         
+        # Recommendations
+        report.append("\n6. Recommendations")
+        report.append("-" * 20)
+        recommendations = self._generate_recommendations()
+        if recommendations:
+            report.extend(recommendations)
+        else:
+            report.append("No specific improvements recommended at this time.")
+        
+        # Return the complete report as a string
         return "\n".join(report)
-
     def _generate_recommendations(self) -> List[str]:
         """Generate improvement recommendations based on evaluation results."""
         recommendations = []
@@ -381,11 +457,18 @@ class ProcessModelEvaluator:
         
         return recommendations
 
-if __name__ == "__main__":
+def main():
+    """Main execution function with enhanced error handling and reporting."""
     try:
+        # Get input file path
+        default_path = "../output/event_log_gemini.csv"
+        file_path = input(f"Enter event log file path (press Enter for default '{default_path}'): ").strip()
+        if not file_path:
+            file_path = default_path
+        
         # Initialize evaluator
         print("\nInitializing Process Model Evaluator...")
-        evaluator = ProcessModelEvaluator("../output/event_log_gemini.csv")
+        evaluator = ProcessModelEvaluator(file_path)
         
         # Calculate metrics
         print("\nCalculating conformance metrics...")
@@ -408,17 +491,19 @@ if __name__ == "__main__":
         print(f"Number of cycles: {evaluator.model_stats['cycles']}")
         print(f"Parallel activities: {evaluator.model_stats['parallel_activities']}")
         
-        # Generate report
+        # Generate and save report
         print("\nGenerating evaluation report...")
         report = evaluator.generate_evaluation_report()
         
+        # Create output directory if it doesn't exist
+        output_dir = os.path.join(os.path.dirname(file_path), "evaluation_reports")
+        os.makedirs(output_dir, exist_ok=True)
+        
         # Save report with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_file = f"../output/evaluation_report_{timestamp}.txt"
+        report_file = os.path.join(output_dir, f"evaluation_report_{timestamp}.txt")
         
-        # Attempt to save report
         try:
-            os.makedirs("output", exist_ok=True)
             with open(report_file, "w", encoding='utf-8') as f:
                 f.write(report)
             print(f"\nEvaluation report saved to: {report_file}")
@@ -429,7 +514,8 @@ if __name__ == "__main__":
             print("\n" + report)
             
     except FileNotFoundError:
-        print("Error: Event log file not found. Please check the file path.")
+        print(f"Error: Event log file not found at '{file_path}'")
+        print("Please check the file path and try again.")
     except pd.errors.EmptyDataError:
         print("Error: The event log file is empty.")
     except pd.errors.ParserError:
@@ -441,4 +527,6 @@ if __name__ == "__main__":
         print(traceback.format_exc())
     finally:
         print("\nProcess Model Evaluation complete.")
-    
+
+if __name__ == "__main__":
+    main()

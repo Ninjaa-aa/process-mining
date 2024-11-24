@@ -12,7 +12,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 class PetriNetVisualizer:
-    def __init__(self, output_dir: str = "output"):
+    def __init__(self, output_dir: str = "../output"):
         """
         Initialize PetriNetVisualizer with configurable output directory
         """
@@ -273,7 +273,7 @@ if __name__ == "__main__":
     try:
         # Configuration
         use_sample_data = False
-        event_log_file = "output/event_log_gemini.csv"  # Update path to match your CSV file
+        event_log_file = "../output/event_log_gemini.csv"  # Update path to match your CSV file
         
         print("\nProcess Mining - Alpha Algorithm Analysis")
         print("=" * 50)
