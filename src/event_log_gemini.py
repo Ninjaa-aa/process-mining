@@ -12,7 +12,7 @@ load_dotenv()
 # Predefined process descriptions with reduced trace counts
 PROCESS_DESCRIPTIONS = {
     "1": {
-        "description": "A customer submits an order online. The system validates the order and checks inventory. If items are available, payment processing begins. After successful payment, the warehouse receives a picking list and prepares the order. Quality check is performed before packaging. Finally, the order is shipped and customer receives tracking details.",
+        "description": "A hospital emergency room manages patient intake and treatment. The process starts when a patient arrives at the ER. First, the patient is registered. After registration, a triage nurse evaluates the patient to determine the severity of their condition. Depending on the triage assessment:If the condition is serious, the patient is immediately sent for treatment by a doctor.If the condition is non-serious, the patient waits until a doctor becomes available. After treatment begins:The doctor may request diagnostic tests (e.g., X-rays, bloodwork) in parallel with starting treatment.Once the test results are available, they are reviewed by the doctor to finalize treatment.If further follow-up is needed, the patient is scheduled for a follow-up appointment and discharged. Alternatively, if the treatment resolves the issue, the patient is directly discharged.In certain cases, the process loops back to repeat diagnostic tests and treatment adjustments if the initial results are inconclusive. The process ends when the patient is successfully discharged or transferred to another department for specialized care",
         "suggested_params": {
             "num_traces": 25,
             "noise_level": 0.1,
@@ -266,7 +266,7 @@ def save_event_log_to_csv(chatbot_response: str, output_file: str, num_traces: i
         df = df.sort_values("Case ID").reset_index(drop=True)
         
         # Save to CSV
-        output_path = os.path.join("output", output_file)
+        output_path = os.path.join("../output", output_file)
         df.to_csv(output_path, index=False)
         print(f"Event log saved successfully to {output_path}.")
     except Exception as e:
